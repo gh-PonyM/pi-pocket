@@ -34,14 +34,12 @@ services:
       # pi-ai falls back to this env var when no credential is stored, so models work
       # without the interactive sign-in in the Providers sheet. Bare key: it comes from
       # the shell, and pocket.sh sources ~/.bash_secrets when the shell is missing it.
+      LITELLM_API_KEY:
       OPENROUTER_API_KEY:
     volumes:
       - ${HOME}/Repos:${HOME}/Repos:rw
       - ${HOME}/dotfiles:${HOME}/dotfiles:rw
       - ${HOME}/Sync/SecondBrain:${HOME}/Sync/SecondBrain:r
-    extra_hosts:
-      # So the built-in browser and Pi's tools can reach services on the host.
-      - "host.docker.internal:host-gateway"
     # Deliberately no /var/run/docker.sock, unlike a setup where an agent drives
     # Docker: nothing in pi-pocket needs it, and a session that can steer Pi would
     # then steer the host's Docker daemon. Add it knowing that is what it means.

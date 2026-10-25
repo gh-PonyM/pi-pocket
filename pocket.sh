@@ -26,29 +26,14 @@ cd "${here}"
 export HOST_UID="${HOST_UID:-$(id -u)}"
 export HOST_GID="${HOST_GID:-$(id -g)}"
 
+## Make the host pi configs available
+export PI_POCKET_PI_DIR="${HOME}/dotfiles/pi-harness/.pi/"
+export PI_POCKET_EXTENSIONS="${HOME}/dotfiles/pi-pocket/.pi-pocket/extensions"
+
 # Identity for commits, read the way run-opencode reads it in the dotfiles: from git
 # itself, so no compose file has to hold it. Left blank when git has no answer.
 export GIT_USER_NAME="${GIT_USER_NAME:-$(git config user.name 2>/dev/null || true)}"
 export GIT_USER_EMAIL="${GIT_USER_EMAIL:-$(git config user.email 2>/dev/null || true)}"
-
-# Interactive shells get these from .bashrc sourcing ~/.bash_secrets; a script run from
-# cron, a launcher or a fresh ssh command does not. Source the file once, here, so the
-# bare keys in the override resolve the same way they do by hand.
-secrets="${HOME}/.bash_secrets"
-need_secrets=0
-for var in OPENROUTER_API_KEY LUKAS_AI_GH_TOKEN; do
-    [[ -z ${!var:-} ]] && need_secrets=1
-done
-if ((need_secrets)) && [[ -f ${secrets} ]]; then
-    # shellcheck disable=SC1090
-    . "${secrets}"
-fi
-for var in OPENROUTER_API_KEY LUKAS_AI_GH_TOKEN; do
-    if [[ -z ${!var:-} ]]; then
-        echo "pocket.sh: ${var} is not set — export it, or add it to ${secrets}" >&2
-        echo "  Models still work without it if you sign in from the Providers sheet." >&2
-    fi
-done
 
 compose() {
     docker compose "$@"
