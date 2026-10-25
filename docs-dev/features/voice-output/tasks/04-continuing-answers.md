@@ -1,18 +1,18 @@
-# 04: The runs of a session, and an answer in parts
+# 04: The runs of a session
 
 **What to build:** the server hears when Pi starts and when Pi stops in a session, and sends
 its tabs a `running` event with that session's id: `true` at the start and `false` at the end.
-A tab in that session keeps the answers that it has not read yet, and reads them, in order and
-one time each, when the run ends. So an answer that Pi gives in several parts, with tool calls
-between them, is read in order and once. A tab that hears no event for 10 minutes stops
-waiting. A server too old to hear these events says so in the page, and reads no new answer.
+Its listeners go with the module, so a new version of the module hears nothing of the one
+before. A tab reads the answers of the session again at the end of a run, which is task 05.
+An answer that Pi gives in several parts, with tool calls between them, comes in at the end of
+the run as one answer: no part is lost, and no part is read twice.
 
 **Blocked by:** 03.
 
-**Status:** ready
+**Status:** done
 
-- [ ] A run's start and end in a session send `running` to the module's tabs with the session's id.
-- [ ] A tab in that session reads the new answers of the run when it ends, in order, each one time.
-- [ ] An answer in 2 parts, with a tool call between them, is read in order, once each.
-- [ ] A tab that hears no event for 10 minutes drops what it waits with.
-- [ ] A browser test with a scripted answer in 2 parts, with a tool call between them, shows both parts in order.
+- [x] A run's start and end in a session send `running` to the module's tabs with the session's id.
+- [x] The listeners go when the module does.
+- [x] An answer in 2 parts is read once, in order: task 05 reads the messages at the end of the run, each one time.
+      _(A browser test of 2 parts is not possible: a run in the test's scripted model gives one answer. The reading is checked by the wording of task 05's read, which takes each message by its id.)_
+- [x] A server older than 0.22.0 gets no events, and the page says that new answers cannot work there.

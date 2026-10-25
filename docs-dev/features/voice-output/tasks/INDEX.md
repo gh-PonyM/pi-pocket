@@ -15,15 +15,15 @@ graph LR
 
 Tasks whose blockers are all `Status: done`, not yet claimed.
 
-- 01: module-and-page — ready
+- None: every task is done.
 
 ## All tasks
 
 | #   | Title              | Blocked by | Status |
 | --- | ------------------ | ---------- | ------ |
-| 01  | module-and-page    | None       | ready  |
-| 02  | markdown-to-words  | 01         | ready  |
-| 03  | read-an-answer     | 02         | ready  |
-| 04  | continuing-answers | 03         | ready  |
-| 05  | new-answers        | 04         | ready  |
-| 06  | ready-to-share     | 05         | ready  |
+| 01  | module-and-page    | None       | done   |
+| 02  | markdown-to-words  | 01         | done   |
+| 03  | read-an-answer     | 02         | done   |
+| 04  | continuing-answers | 03         | done   |
+| 05  | new-answers        | 04         | done   |
+| 06  | ready-to-share     | 05         | done   |

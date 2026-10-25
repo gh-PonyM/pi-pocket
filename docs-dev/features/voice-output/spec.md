@@ -69,12 +69,12 @@ module or a gallery entry later, with no change but a move.
   says "Table."; fenced code and inline code say "bash code, 12 lines" unless the tab turns on
   reading code. It also drops the `[via …]` marker that a message from another agent starts with.
 - **Where the tab is, and who it is.** New answers are read only when:
-  - new answers is on in this tab;
-  - the tab shows a session; and
-  - the person in this tab is the person Pi works for in that session. The module reads it
-    from `pocket.messages()` on load and on each change of session. There is no public host
-    member to ask for it, so this is the one weak point: the check is as good as the last
-    message that the tab read.
+    - new answers is on in this tab;
+    - the tab shows a session; and
+    - the person in this tab is the person Pi works for in that session. The module reads it
+      from `pocket.messages()` on load and on each change of session. There is no public host
+      member to ask for it, so this is the one weak point: the check is as good as the last
+      message that the tab read.
 - **How a new answer is found.** No event in the browser says that Pi answered. The server
   hears `run.started` and `run.ended`, and sends its tabs a `running` event with the session's
   id (`true` at the start, `false` at the end). Its tabs read the session's newest messages
