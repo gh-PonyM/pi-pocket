@@ -1,0 +1,282 @@
+/**
+ * GitLab through the `glab` command, signed in by `GITLAB_TOKEN` and pointed at its instance by
+ * `GITLAB_HOST`: the same job as `github.ts` does for GitHub, for repository watches on a GitLab
+ * host. A call runs in the project's folder and names `projects/:fullpath`, which `glab` fills in
+ * from the repository of its working directory; no host is passed, so the remote decides.
+ *
+ * `glab` writes a config folder before it reads the token, and the server may run as a user that
+ * does not own `$HOME`, so `GLAB_CONFIG_DIR` always points at a folder Pi Pocket owns.
+ */
+import { execFile } from "node:child_process";
+import { mkdirSync } from "node:fs";
+import { describe, HttpError } from "./errors.ts";
+import { snippet } from "./projection.ts";
+
+/** Runs `glab` with arguments, in a folder; resolves to what it printed, or rejects with what it said went wrong. */
+export type Glab = (args: string[], cwd?: string, timeoutMs?: number) => Promise<string>;
+
+const GLAB_TIMEOUT_MS = 60_000;
+
+/** The config folder `glab` writes into: inside Pi Pocket's data folder, which the server owns. */
+let configDir: string | undefined;
+
+/** Point `glab` at a writable config folder. Called once, with Pi Pocket's data folder. */
+export function setGlabConfigDir(dir: string): void {
+    configDir = dir;
+}
+
+function configFolder(): string {
+    const dir = configDir ?? process.env.GLAB_CONFIG_DIR ?? "/tmp/pi-pocket-glab";
+
+    mkdirSync(dir, { recursive: true });
+
+    return dir;
+}
+
+/** The `glab` on this machine, never asking anything: watches run with nobody there to answer. */
+export const runGlab: Glab = (args, cwd, timeoutMs = GLAB_TIMEOUT_MS) =>
+    new Promise((resolve, reject) => {
+        execFile(
+            "glab",
+            args,
+            {
+                ...(cwd === undefined ? {} : { cwd }),
+                timeout: timeoutMs,
+                maxBuffer: 64 * 1024 * 1024,
+                env: {
+                    ...process.env,
+                    GLAB_CONFIG_DIR: configFolder(),
+                    // Nobody is there to answer a prompt, and no page lasts forever.
+                    GIT_TERMINAL_PROMPT: "0",
+                    NO_COLOR: "1",
+                    CLICOLOR: "0",
+                },
+            },
+            (error, stdout, stderr) => {
+                if (error === null) {
+                    return resolve(stdout);
+                }
+
+                if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+                    return reject(
+                        new Error(
+                            "GitLab's glab command is not installed here. Install it, then set GITLAB_TOKEN and GITLAB_HOST.",
+                        ),
+                    );
+                }
+
+                const said = String(stderr).trim().split("\n").at(-1) ?? "";
+
+                reject(new Error(snippet(said || error.message, 300)));
+            },
+        );
+    });
+
+/** Whether the environment can reach GitLab: a token, and the command. */
+export function gitlabReady(): { ready: boolean; why?: string } {
+    if ((process.env.GITLAB_TOKEN ?? "").trim() === "") {
+        return {
+            ready: false,
+            why: "GITLAB_TOKEN is not set, so glab has no token: set it in the environment.",
+        };
+    }
+
+    return { ready: true };
+}
+
+/** The GitLab path of a repository named `host/group/project`, or `group/project`; a subgroup stays whole. */
+export function projectOf(repo: string): string {
+    const parts = repo.split("/");
+
+    // A leading part with a dot in it is a host (`gl.mycorp.com/group/project`); one without is a group.
+    return parts.length > 2 && /[.:]/.test(parts[0]!) ? parts.slice(1).join("/") : repo;
+}
+
+/** A project's issues, opened, newest first. */
+export type GlIssue = {
+    iid: number;
+    title?: string;
+    description?: string | null;
+    web_url?: string;
+    state?: string;
+    created_at?: string;
+    author?: { username?: string; name?: string } | null;
+    labels?: string[];
+    assignees?: ({ username?: string } | null)[] | null;
+};
+
+/** A project's merge request. */
+export type GlMerge = {
+    iid: number;
+    title?: string;
+    description?: string | null;
+    web_url?: string;
+    state?: string;
+    draft?: boolean;
+    created_at?: string;
+    source_branch?: string;
+    target_branch?: string;
+    author?: { username?: string } | null;
+    labels?: string[];
+    assignees?: ({ username?: string } | null)[] | null;
+};
+
+/** A pipeline of a project. */
+export type GlPipeline = {
+    id: number;
+    status?: string;
+    ref?: string;
+    sha?: string;
+    source?: string;
+    web_url?: string;
+    created_at?: string;
+    updated_at?: string;
+};
+
+/** A project's release. */
+export type GlRelease = {
+    tag_name?: string;
+    name?: string;
+    description?: string | null;
+    description_html?: string | null;
+    upcoming_release?: boolean;
+    released_at?: string;
+    created_at?: string;
+    _links?: { self?: string };
+};
+
+/** A note on an issue or a merge request. */
+export type GlNote = {
+    id: number;
+    body?: string;
+    created_at?: string;
+    system?: boolean;
+    author?: { username?: string } | null;
+    noteable_type?: string;
+    noteable_iid?: number;
+};
+
+/** What a GitLab call needs from a watch: its project, and where its folder is. */
+export type GlTarget = {
+    /** `group/project`, with any subgroup. */
+    project: string;
+    /** The folder the command runs in: `:fullpath` is filled from it. */
+    cwd: string;
+};
+
+/**
+ * `glab api` for the project in `cwd`, with `:fullpath` resolved from that folder's remote. The
+ * endpoint starts after `projects/:fullpath/`: `issues?state=opened`.
+ */
+export function projectApi(...rest: string[]): string[] {
+    return ["api", `projects/:fullpath/${rest.join("/")}`, "--paginate"];
+}
+
+/** Ask GitLab for the project's repository, to learn whether the token may push to it. */
+export async function projectInfo(
+    glab: Glab,
+    target: GlTarget,
+): Promise<{ path: string; defaultBranch: string; push: boolean }> {
+    let found: {
+        path_with_namespace?: string;
+        default_branch?: string | null;
+        permissions?: { project_access?: { access_level?: number } | null } | null;
+        _links?: { self?: string };
+    };
+
+    try {
+        found = JSON.parse(await glab(["api", "projects/:fullpath"], target.cwd)) as typeof found;
+    } catch (error) {
+        const said = describe(error);
+
+        throw new HttpError(
+            /not found|404/i.test(said) ? 404 : 502,
+            /not found|404/i.test(said)
+                ? `${target.project} is not tracked on ${gitlabName()}.`
+                : `GitLab could not be asked about ${target.project}: ${said}`,
+        );
+    }
+
+    const path = found.path_with_namespace ?? target.project;
+
+    if (path !== target.project) {
+        throw new HttpError(502, `GitLab named ${target.project} oddly: ${snippet(path, 100)}.`);
+    }
+
+    // Developer and above can push. Maintainer is 40, Developer 30.
+    const level = found.permissions?.project_access?.access_level ?? 0;
+
+    return {
+        path,
+        defaultBranch: found.default_branch ?? "main",
+        push: level >= 30,
+    };
+}
+
+/** The GitLab host this environment speaks to, for messages. */
+export function gitlabName(): string {
+    return (process.env.GITLAB_HOST ?? "").trim() || "gitlab.com";
+}
+
+/** Whether a GitLab access level may push to the project: Developer (30) and above. */
+export const mayPush = (level: number | null | undefined): boolean => (level ?? 0) >= 30;
+
+/**
+ * Whether `username` may push to the project: a member with Developer or above, or its owner.
+ * Asked of one member, so a large project does not list every one. Undefined when it cannot be
+ * told. Asked at most ten minutes per person, as the GitHub side does.
+ */
+const access = new Map<string, { push: boolean | undefined; at: number }>();
+const ACCESS_MS = 10 * 60_000;
+const UNTOLD_MS = 60_000;
+const MAX_ACCESS = 2_000;
+
+export async function memberMayPush(
+    glab: Glab,
+    target: GlTarget,
+    username: string,
+): Promise<boolean | undefined> {
+    if (!/^[A-Za-z0-9][\w.-]{0,254}$/.test(username)) {
+        return false;
+    }
+
+    const key = `${target.project} ${username}`.toLowerCase();
+    const had = access.get(key);
+    const now = Date.now();
+
+    if (had !== undefined && now - had.at < (had.push === undefined ? UNTOLD_MS : ACCESS_MS)) {
+        return had.push;
+    }
+
+    let push: boolean | undefined;
+
+    try {
+        const found = JSON.parse(
+            await glab(
+                [
+                    "api",
+                    // One member, as an object: a large project does not list every member.
+                    "projects/:fullpath/members/all/:user",
+                    "--placeholder",
+                    `user=${username}`,
+                ],
+                target.cwd,
+            ),
+        ) as { access_level?: number } | { access_level?: number }[];
+
+        const one = Array.isArray(found) ? found[0] : found;
+
+        push = one === undefined ? undefined : mayPush(one.access_level);
+    } catch {
+        push = undefined;
+    }
+
+    access.delete(key);
+    access.set(key, { push, at: now });
+
+    if (access.size > MAX_ACCESS) {
+        access.delete(access.keys().next().value!);
+    }
+
+    return push;
+}

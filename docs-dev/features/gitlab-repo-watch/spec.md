@@ -58,30 +58,54 @@ still says where it lives.
 
 ## Implementation Decisions
 
-### The provider comes from the name
+### The provider comes from where the command runs
 
-`RepoWatch.repo` already stores `host/owner/name`, or `owner/name` off a non-default host. A new
-module decides the command from that string:
+A session works in a folder. That folder's `origin` remote says which service holds the
+repository, and both commands read it themselves when they run in that folder: `gh pr view` and
+`glab mr view` find the project of the directory they run in.
 
-- `providerOf(repo)` returns `"gitlab"` or `"github"`.
-- `GITLAB_HOST` names the GitLab host, as `docker-compose.yml` sets it. When it is unset, the
-  default is `gitlab.com`.
-- A name with no host is GitHub, as now. A name whose host equals `GITLAB_HOST` or `gitlab.com`
-  is GitLab. Any other host is GitHub, as now.
-- GitLab repository paths can have more than two parts (`group/subgroup/project`). The name
-  parser must accept them and keep the whole path.
+So the rule is: **run the command in the project root and let it resolve the remote.**
+
+- `git remote get-url origin` in the session's folder gives the host. Only `origin` counts; any
+  other remote is ignored, because `origin` is what `git push` uses and what the person works
+  against.
+- A GitLab host runs `glab`, in that same folder.
+- Any other host runs `gh`, as now.
+- Nothing is parsed out of a name to decide this, and no provider is stored.
+
+A pull request watch needs no name parsing at all: the folder is the session's own, and the
+command that runs there resolves the project.
+
+`repo_watch` runs on a timer with nobody there, so it cannot ask a folder each time. It resolves
+the repository once, when it is set up, and stores the result as `host/owner/name`. A watch on a
+repository the session does not work in needs a name that carries its host
+(`gl.mycorp.com/group/project`), because no folder can answer for it.
+
+`GITLAB_HOST`, when set, names the GitLab instance the environment is signed in to. It does not
+override the remote: it tells the GitLab side which host its token belongs to.
+
+### What a name that cannot be found says
+
+When `origin` points at a host and that host does not have the repository, the message names the
+host the remote gave:
+
+- `acme/api` is not tracked on github.com.
+- `acme/api` is not tracked on gl.mycorp.com.
+
+The host comes from the remote, so the sentence is true and not a guess. This replaces the
+current "GitHub has no repository …" wording, which assumes GitHub.
 
 ### One command runner, two commands
 
-`github.ts` has `runGh`. It becomes one case of a runner that takes the command name and the
-environment. A new `gitlab.ts` gives the GitLab side:
+`github.ts` has `runGh`. A new `gitlab.ts` gives the GitLab side, and a small `remote.ts` decides
+which one to use for a folder:
 
-- a runner that calls `glab` with `GITLAB_TOKEN` and `GITLAB_HOST` from the environment, and with
-  prompts disabled;
-- the GitLab readings of what a watch needs.
-
-Both providers answer the same internal shapes (`Item`, the fields `#fetch` builds), so
-`repo-watches.ts` keeps its loop, its deduplication, its limits, and its message format.
+- `providerOf(folder)` reads `git remote get-url origin`, compares its host with `GITLAB_HOST`
+  (or `gitlab.com`), and returns `"gitlab"` or `"github"`.
+- The GitLab runner calls `glab` with `GITLAB_TOKEN` and `GITLAB_HOST` from the environment, with
+  prompts disabled, and with the folder as its working directory.
+- Both providers answer the same internal shapes (`Item`, the fields `#fetch` builds), so
+  `repo-watches.ts` keeps its loop, its deduplication, its limits, and its message format.
 
 ### What a GitLab look asks
 
@@ -183,3 +207,5 @@ scripts PiP with a faux model.
   set it.
 - `docs.ts` documents `RepoWatch` as a GitHub record. That comment must change, because the
   stored kind and its fields do not: only the words that describe them.
+- Only `origin` decides the provider. A second remote, such as a fork's `upstream`, is ignored on
+  purpose: it would make the answer depend on which remote was read.

@@ -75,6 +75,7 @@ import { ExtensionWebs, mayUse } from "./extension-web.ts";
 import { defang, quoted } from "./fence.ts";
 import { FolderFavorites } from "./folder-favorites.ts";
 import { Gallery } from "./gallery.ts";
+import { setGlabConfigDir } from "./gitlab.ts";
 import { Goals } from "./goals.ts";
 import {
     type ApprovalRequest,
@@ -390,6 +391,8 @@ export class PocketApp {
         this.#home = options.home ?? (process.env.HOME || homedir());
         this.now = options.now ?? Date.now;
         this.dataDir = options.dataDir;
+        // glab writes a config folder before it reads GITLAB_TOKEN: keep it where the server can write.
+        setGlabConfigDir(join(options.dataDir, "glab"));
         this.defaultCwd = options.defaultCwd;
         this.supervised = options.supervised;
         this.config = new ConfigStore(options.dataDir);
