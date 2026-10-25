@@ -112,7 +112,7 @@ CMD []
 
 # The stock image with Python. Nothing above changes for it, and nothing is copied
 # again: this stage is the one that differs.
-FROM app AS tools
+FROM app AS development
 
 ARG UV_VERSION=0.13.5
 ARG GLAB_VERSION=1.124.0
@@ -152,10 +152,19 @@ RUN apt-get update \
 
 # The installer puts uv and uvx in /usr/local/bin and leaves nothing in ~/.bashrc,
 # so the PATH below is the only one that matters.
+#
+# It also keeps a receipt in ~/.config/uv, and it runs as root here, so that folder is
+# root's. The session runs as the host's uid: a ~/.config only root can write stops
+# Chromium before it opens any page (it dies with SIGTRAP), which is why the folder is
+# left writable by anyone, as UV_TOOL_BIN_DIR is below. The home folder itself is opened
+# the same way, so that uid can write the cache Chromium and uv keep beside it (~/.cache).
 RUN curl -LsSf https://astral.sh/uv/install.sh \
         | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 UV_VERSION="${UV_VERSION}" sh \
     && uv --version \
-    && python3 --version
+    && python3 --version \
+    && mkdir -p /home/node/.config \
+    && chmod -R a+rwX /home/node/.config \
+    && chmod a+w /home/node
 
 # uv tool install puts each tool's own entry points here. The image runs as root and
 # the session runs as the host's uid, so the folder must be writable by anyone:
@@ -163,13 +172,7 @@ RUN curl -LsSf https://astral.sh/uv/install.sh \
 ENV UV_TOOL_BIN_DIR=/opt/uv-bin
 RUN mkdir -p "${UV_TOOL_BIN_DIR}" && chmod 0777 "${UV_TOOL_BIN_DIR}"
 
-# /opt/uv-bin comes before /usr/local/bin, which is already on the image's PATH.
-ENV PATH=/opt/uv-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
-
-# glab writes its config folder under $HOME before it reads GITLAB_TOKEN, and the
-# session's uid does not own the image's /home/node. Point it at Pi Pocket's data
-# folder, which the server owns; the runtime creates it when it is missing.
-ENV GLAB_CONFIG_DIR=/data/glab
-RUN mkdir -p /data/glab && chmod 0777 /data/glab
+# /opt/uv-bin comes before the rest of the image's PATH, which is kept as it is.
+ENV PATH=/opt/uv-bin:${PATH}
 
 WORKDIR /workspace

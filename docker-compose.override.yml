@@ -33,7 +33,7 @@ services:
     build:
       context: .
       dockerfile: docker/tools.dockerfile
-      target: ""
+      target: development
     image: pi-pocket:tools
     # Mirrored: repos, dotfiles and notes at their host paths. SecondBrain read-only,
     # as everywhere else in this setup.
