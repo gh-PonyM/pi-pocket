@@ -1,0 +1,47 @@
+# pi-pocket, layered on top of the compose file next to this one.
+#
+# Docker Compose loads docker-compose.override.yml automatically whenever it loads
+# docker-compose.yml, so nothing has to name either file:
+#
+#   ./pocket.sh                 # exports what this file needs from the host, then up -d --build
+#   docker compose up -d --build    # the same, minus the environment injection
+#
+# Only what the stock service does not already do is here: mirrored paths, the
+# identity to write them as, and the credentials a shell carries but a compose file
+# must not hold. Everything else — port, access mode, Chromium flags, security_opt,
+# healthcheck — keeps the upstream definition.
+#
+# Volumes merge by target in Compose, so the mounts below are added to the stock ones
+# rather than replacing them. Paths mirror the host: /home/you/Repos on the host is
+# /home/you/Repos in the container, which is why they are written out in full instead
+# of being funnelled through a container-only folder — an absolute path in a session
+# means the same file on either side.
+
+services:
+  pi-pocket:
+    # uid of the invoking user, so files written in the mounts belong to them rather
+    # than to root. pocket.sh exports both from `id`; the fallbacks match the image's
+    # `node` user. HOME stays /home/node, so only the data paths are mirrored.
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    # Mirrored: repos, dotfiles and notes at their host paths. SecondBrain read-only,
+    # as everywhere else in this setup.
+    working_dir: ${HOME}/Repos
+    environment:
+      GIT_USER_NAME: ${GIT_USER_NAME}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL}
+      # gh-based extensions (repo watches, PiP) read this.
+      GH_TOKEN: ${LUKAS_AI_GH_TOKEN}
+      # pi-ai falls back to this env var when no credential is stored, so models work
+      # without the interactive sign-in in the Providers sheet. Bare key: it comes from
+      # the shell, and pocket.sh sources ~/.bash_secrets when the shell is missing it.
+      OPENROUTER_API_KEY:
+    volumes:
+      - ${HOME}/Repos:${HOME}/Repos:rw
+      - ${HOME}/dotfiles:${HOME}/dotfiles:rw
+      - ${HOME}/Sync/SecondBrain:${HOME}/Sync/SecondBrain:r
+    extra_hosts:
+      # So the built-in browser and Pi's tools can reach services on the host.
+      - "host.docker.internal:host-gateway"
+    # Deliberately no /var/run/docker.sock, unlike a setup where an agent drives
+    # Docker: nothing in pi-pocket needs it, and a session that can steer Pi would
+    # then steer the host's Docker daemon. Add it knowing that is what it means.
