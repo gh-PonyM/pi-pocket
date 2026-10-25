@@ -18,7 +18,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts=false \
     && npm cache clean --force
 
-FROM node:24-bookworm-slim
+FROM node:24-bookworm-slim AS app
 
 ARG CLOUDFLARED_VERSION=latest
 

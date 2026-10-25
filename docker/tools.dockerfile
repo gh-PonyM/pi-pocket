@@ -21,7 +21,7 @@ RUN npm ci --omit=dev --ignore-scripts=false \
     && npm cache clean --force
 
 # The runtime image on common tools. It ends before the app source.
-FROM node:24-bookworm-slim
+FROM node:24-bookworm-slim AS app
 
 ARG CLOUDFLARED_VERSION=latest
 
@@ -115,8 +115,27 @@ CMD []
 FROM app AS tools
 
 ARG UV_VERSION=0.13.5
+ARG GLAB_VERSION=1.124.0
 
 USER root
+
+# GitLab's glab, for repository watches on a GitLab host (`repo-watches.ts`). It reads its
+# token and host from GITLAB_TOKEN and GITLAB_HOST, so it needs no `glab auth login`.
+# The binary is placed by architecture, as cloudflared is above.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) glab_arch=amd64 ;; \
+        arm64) glab_arch=arm64 ;; \
+        *) echo "glab has no release for $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 3 -o /tmp/glab.tar.gz \
+        "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/packages/generic/glab/${GLAB_VERSION}/glab_${GLAB_VERSION}_linux_${glab_arch}.tar.gz"; \
+    tar -xzf /tmp/glab.tar.gz -C /tmp bin/glab; \
+    install -m 0755 /tmp/bin/glab /usr/local/bin/glab; \
+    rm -rf /tmp/glab.tar.gz /tmp/bin; \
+    GLAB_CONFIG_DIR=/tmp/glab-check /usr/local/bin/glab --version; \
+    rm -rf /tmp/glab-check
 
 # The stock image has no python at all. Debian's python is enough for uv: uv reads
 # the interpreter of a venv from its pyvenv.cfg, whatever version wrote it.
@@ -146,5 +165,11 @@ RUN mkdir -p "${UV_TOOL_BIN_DIR}" && chmod 0777 "${UV_TOOL_BIN_DIR}"
 
 # /opt/uv-bin comes before /usr/local/bin, which is already on the image's PATH.
 ENV PATH=/opt/uv-bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# glab writes its config folder under $HOME before it reads GITLAB_TOKEN, and the
+# session's uid does not own the image's /home/node. Point it at Pi Pocket's data
+# folder, which the server owns; the runtime creates it when it is missing.
+ENV GLAB_CONFIG_DIR=/data/glab
+RUN mkdir -p /data/glab && chmod 0777 /data/glab
 
 WORKDIR /workspace
