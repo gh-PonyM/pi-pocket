@@ -63,6 +63,7 @@ services:
       - ${HOME}/Repos:/home/node/Repos:rw
       - ${HOME}/dotfiles:/home/node/dotfiles:rw
       - ${HOME}/Sync/SecondBrain:/home/node/Sync/SecondBrain:r
+      - ${HOME}/Sync/LLMWiki:/home/node/Sync/LLMWiki:rw
     # Deliberately no /var/run/docker.sock, unlike a setup where an agent drives
     # Docker: nothing in pi-pocket needs it, and a session that can steer Pi would
     # then steer the host's Docker daemon. Add it knowing that is what it means.
