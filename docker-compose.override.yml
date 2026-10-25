@@ -36,6 +36,14 @@ services:
       # the shell, and pocket.sh sources ~/.bash_secrets when the shell is missing it.
       LITELLM_API_KEY:
       OPENROUTER_API_KEY:
+
+      # uv
+      UV_COMPILE_BYTECODE: "1"
+      UV_LINK_MODE: copy
+      UV_TOOL_BIN_DIR: /opt/uv-bin/
+      UV_PYTHON_DOWNLOADS: "0"
+      UV_PROJECT_ENVIRONMENT: ".venv-docker"
+
     volumes:
       - ${HOME}/Repos:${HOME}/Repos:rw
       - ${HOME}/dotfiles:${HOME}/dotfiles:rw
