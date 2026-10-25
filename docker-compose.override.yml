@@ -21,11 +21,25 @@ services:
   pi-pocket:
     # uid of the invoking user, so files written in the mounts belong to them rather
     # than to root. pocket.sh exports both from `id`; the fallbacks match the image's
-    # `node` user. HOME stays /home/node, so only the data paths are mirrored.
+    # `node` user. HOME stays unset, so the image uses its own /home/node as it is.
     user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    # The stock image's stages are in this file; docker/tools.dockerfile starts FROM
+    # that `app` stage and adds python3 and uv. Compose builds the image a service
+    # names before it creates the container, so `up -d --build` makes pi-pocket:local
+    # in the same build and the tools are layered on it, not built again.
+    #
+    # Compose merges this build mapping into the stock one key by key, so `dockerfile`
+    # and `target` are named here, together with the image they belong to.
+    build:
+      context: .
+      dockerfile: docker/tools.dockerfile
+      target: ""
+    image: pi-pocket:tools
     # Mirrored: repos, dotfiles and notes at their host paths. SecondBrain read-only,
     # as everywhere else in this setup.
-    working_dir: ${HOME}/Repos
+    working_dir: /home/node/Repos
+    # No PATH here: the image sets it and the shell it starts reads that value. A
+    # PATH in this file would replace the image's, not add to it.
     environment:
       GIT_USER_NAME: ${GIT_USER_NAME}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL}
@@ -40,14 +54,14 @@ services:
       # uv
       UV_COMPILE_BYTECODE: "1"
       UV_LINK_MODE: copy
-      UV_TOOL_BIN_DIR: /opt/uv-bin/
+      UV_TOOL_BIN_DIR: /opt/uv-bin
       UV_PYTHON_DOWNLOADS: "0"
       UV_PROJECT_ENVIRONMENT: ".venv-docker"
 
     volumes:
-      - ${HOME}/Repos:${HOME}/Repos:rw
-      - ${HOME}/dotfiles:${HOME}/dotfiles:rw
-      - ${HOME}/Sync/SecondBrain:${HOME}/Sync/SecondBrain:r
+      - ${HOME}/Repos:/home/node/Repos:rw
+      - ${HOME}/dotfiles:/home/node/dotfiles:rw
+      - ${HOME}/Sync/SecondBrain:/home/node/Sync/SecondBrain:r
     # Deliberately no /var/run/docker.sock, unlike a setup where an agent drives
     # Docker: nothing in pi-pocket needs it, and a session that can steer Pi would
     # then steer the host's Docker daemon. Add it knowing that is what it means.

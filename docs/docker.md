@@ -88,6 +88,32 @@ docker compose up -d --build
 
 The external folders and the database are untouched. Extensions are live-edited without a rebuild only once they are mounted; the built-in code and the web app are read from the image, so a rebuild is needed for changes to `src/` and `web/`.
 
+## Python tools
+
+The stock image has no python and no `uv` on PATH. [`docker/tools.dockerfile`](../docker/tools.dockerfile) adds both. It repeats the stock file's stages, line for line, and then continues the `app` stage with python3 and uv. `docker-compose.override.yml` builds it as `pi-pocket:tools`, so nothing is copied a second time and the stock stages are not built twice:
+
+```bash
+./pocket.sh
+```
+
+Compose builds the image a service names before it creates the container. `pi-pocket:local` is built first in the same build, and the tools image is layered on it.
+
+The stage's lines are kept identical to `docker/Dockerfile` on purpose. A line that differs in the copy makes Docker build the stage again, and the tools would sit on a different base.
+
+What a session gets:
+
+- `python3`, `python3-venv`, and `build-essential`, so `uv venv` works and a package without a wheel can still compile. `UV_PYTHON_DOWNLOADS=0` is set for the session, so a `uv python install` download is not available: it lives in the container's writable layer and a recreate erases it.
+- `uv` and `uvx` in `/usr/local/bin`, and `/opt/uv-bin` (the folder `UV_TOOL_BIN_DIR` names) at the start of PATH. Both folders are on the image, so the PATH comes from the image and no compose variable sets it.
+- `/opt/uv-bin` is writable by every uid, so a tool that the host's uid installs with `uv tool install ruff` lands on PATH in the same container.
+
+A project venv works as usual. `UV_PROJECT_ENVIRONMENT=.venv` puts it at the project folder, and `.venv` is the name uv and every editor expect by default, so `uv run` and `uv sync` find it without a PATH entry. Scripts in a venv are not reachable by name from outside it: use `uv run` in the project folder, or activate the venv with `source .venv/bin/activate`.
+
+Check that a running container has them:
+
+```bash
+docker compose exec pi-pocket sh -c 'python3 --version && uv --version'
+```
+
 ## Security
 
 Anyone who can steer a session can run commands in this container as its user. With the default root user that means every file in the mounted folders, and every provider key in the environment. Mount only the projects you would trust Pi with, keep the port off the public internet unless you use a tunnel, and read [SECURITY.md](../SECURITY.md) before inviting other people.
