@@ -172,6 +172,70 @@ export function projectApi(...rest: string[]): string[] {
     return ["api", `projects/:fullpath/${rest.join("/")}`, "--paginate"];
 }
 
+/**
+ * The items of a paginated list. With `--paginate`, `glab` prints one JSON array for each page
+ * after another, not one array of everything, so the pages are read in turn and joined. A single
+ * page is one array, and an endpoint that answers with one object is that object.
+ */
+export function parsePages<T>(printed: string): T[] {
+    const items: T[] = [];
+    const text = printed.trim();
+    let at = 0;
+
+    while (at < text.length) {
+        const end = endOfValue(text, at);
+        const page = JSON.parse(text.slice(at, end)) as unknown;
+
+        items.push(...(Array.isArray(page) ? (page as T[]) : [page as T]));
+        at = end;
+
+        while (at < text.length && /\s/.test(text[at]!)) {
+            at += 1;
+        }
+    }
+
+    return items;
+}
+
+/**
+ * Where the JSON value that starts at `at` ends: the first point past its opening bracket where the
+ * brackets balance again. `glab` prints compact JSON, so a bracket outside a string is structure.
+ */
+function endOfValue(text: string, at: number): number {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let index = at; index < text.length; index += 1) {
+        const char = text[index]!;
+
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+            } else if (char === "\\") {
+                escaped = true;
+            } else if (char === '"') {
+                inString = false;
+            }
+        } else if (char === '"') {
+            inString = true;
+        } else if (char === "[" || char === "{") {
+            depth += 1;
+        } else if (char === "]" || char === "}") {
+            depth -= 1;
+
+            if (depth === 0) {
+                return index + 1;
+            }
+        } else if (depth === 0 && /\s/.test(char)) {
+            // A bare value, such as a number: it ends at the first space.
+            return index;
+        }
+    }
+
+    return text.length;
+}
+
 /** Ask GitLab for the project's repository, to learn whether the token may push to it. */
 export async function projectInfo(
     glab: Glab,

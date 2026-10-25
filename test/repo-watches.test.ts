@@ -653,6 +653,25 @@ test("while triggers are off, watches ask GitHub nothing; on again, what came is
 
 // ─── GitLab ─────────────────────────────────────────────────────────────────
 
+/**
+ * What `glab api --paginate` prints for a list: one array for each page, back to back, with no
+ * separator. This is how gitlab.com answers a project with more to show than a page, and reading it
+ * as one array fails, so a fake must print it the same way.
+ */
+function paged(items: object[]): string {
+    if (items.length === 0) {
+        return "[]";
+    }
+
+    const pages: string[] = [];
+
+    for (let at = 0; at < items.length; at += 1) {
+        pages.push(JSON.stringify(items.slice(at, at + 1)));
+    }
+
+    return pages.join("");
+}
+
 /** GitLab as the fake glab tells it: one project, reached from the folder of a session that works in it. */
 const gitlab = {
     calls: [] as string[][],
@@ -693,23 +712,23 @@ async function fakeGlab(args: string[]): Promise<string> {
     }
 
     if (path.includes("/issues?")) {
-        return JSON.stringify(gitlab.issues);
+        return paged(gitlab.issues);
     }
 
     if (path.includes("/merge_requests?")) {
-        return JSON.stringify(gitlab.merges);
+        return paged(gitlab.merges);
     }
 
     if (path.includes("/pipelines?")) {
-        return JSON.stringify(gitlab.pipelines);
+        return paged(gitlab.pipelines);
     }
 
     if (path.includes("/releases?")) {
-        return JSON.stringify(gitlab.releases);
+        return paged(gitlab.releases);
     }
 
-    if (path.includes("/notes?")) {
-        return JSON.stringify(gitlab.notes);
+    if (path.includes("/search?")) {
+        return paged(gitlab.notes);
     }
 
     throw new Error(`unexpected glab ${args.join(" ")}`);

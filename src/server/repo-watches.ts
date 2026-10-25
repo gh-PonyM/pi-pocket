@@ -51,6 +51,7 @@ import {
     type GlRelease,
     type GlTarget,
     memberMayPush,
+    parsePages,
     projectApi,
     projectInfo,
     projectOf,
@@ -777,14 +778,14 @@ export class RepoWatches {
                 (await memberMayPush(glab, target, it.author?.username ?? "")) === true);
 
         if (wants.has("pulls")) {
-            const merges = JSON.parse(
+            const merges = parsePages<GlMerge>(
                 await glab(
                     projectApi(
                         "merge_requests?state=opened&order_by=created_at&sort=desc&per_page=30",
                     ),
                     cwd,
                 ),
-            ) as GlMerge[];
+            );
 
             for (const merge of merges) {
                 if (!fresh(`p${merge.iid}`, merge.created_at) || !(await passes(merge))) {
@@ -801,12 +802,12 @@ export class RepoWatches {
         }
 
         if (wants.has("issues")) {
-            const issues = JSON.parse(
+            const issues = parsePages<GlIssue>(
                 await glab(
                     projectApi("issues?state=opened&order_by=created_at&sort=desc&per_page=50"),
                     cwd,
                 ),
-            ) as GlIssue[];
+            );
 
             for (const issue of issues) {
                 if (!fresh(`i${issue.iid}`, issue.created_at) || !(await passes(issue))) {
@@ -824,12 +825,12 @@ export class RepoWatches {
 
         if (wants.has("ci")) {
             // Only the branch's own pipelines: a merge request's runs on a fork are someone else's.
-            const pipelines = JSON.parse(
+            const pipelines = parsePages<GlPipeline>(
                 await glab(
                     projectApi(`pipelines?ref=${encodeURIComponent(watch.branch)}&per_page=20`),
                     cwd,
                 ),
-            ) as GlPipeline[];
+            );
 
             for (const pipeline of pipelines) {
                 if (pipeline.status === "failed") {
@@ -843,9 +844,9 @@ export class RepoWatches {
         }
 
         if (wants.has("releases")) {
-            const releases = JSON.parse(
+            const releases = parsePages<GlRelease>(
                 await glab(projectApi("releases?per_page=10"), cwd),
-            ) as GlRelease[];
+            );
 
             for (const release of releases) {
                 if (release.upcoming_release === true) {
@@ -862,33 +863,40 @@ export class RepoWatches {
         }
 
         if (wants.has("mentions")) {
-            for (const kind of ["issues", "merge_requests"] as const) {
-                const notes = JSON.parse(
-                    await glab(
-                        projectApi(`${kind}/notes?sort=desc&order_by=created_at&per_page=50`),
-                        cwd,
+            // GitLab has no project-wide notes endpoint: notes belong to one issue or merge request, so
+            // `search` is the way to find @pi across the project, and it returns each note with the
+            // issue or merge request it is on.
+            const notes = parsePages<GlNote>(
+                await glab(
+                    projectApi(
+                        `search?scope=notes&search=${encodeURIComponent("@pi")}&per_page=100`,
                     ),
-                ) as GlNote[];
+                    cwd,
+                ),
+            );
 
-                for (const note of notes) {
-                    const body = (note.body ?? "").trim();
+            for (const note of notes) {
+                const body = (note.body ?? "").trim();
+                const merge = note.noteable_type === "MergeRequest";
+                const id = `${merge ? "l" : "c"}${note.id}`;
 
-                    if (
-                        note.system === true ||
-                        !fresh(`${kind === "issues" ? "c" : "l"}${note.id}`, note.created_at) ||
-                        !mentionsPi(body) ||
-                        !(await memberMayPush(glab, target, note.author?.username ?? ""))
-                    ) {
-                        continue;
-                    }
-
-                    add({
-                        id: `${kind === "issues" ? "c" : "l"}${note.id}`,
-                        at: time(note.created_at),
-                        line: `${who(note.author)} mentioned @pi on ${kind === "issues" ? `#${note.noteable_iid ?? "?"}` : `merge request !${note.noteable_iid ?? "?"}`} · ${watch.repo}/${kind === "issues" ? "-/issues" : "-/merge_requests"}/${note.noteable_iid ?? "?"}`,
-                        body,
-                    });
+                if (
+                    note.system === true ||
+                    !fresh(id, note.created_at) ||
+                    !mentionsPi(body) ||
+                    !(await memberMayPush(glab, target, note.author?.username ?? ""))
+                ) {
+                    continue;
                 }
+
+                const iid = note.noteable_iid ?? "?";
+
+                add({
+                    id,
+                    at: time(note.created_at),
+                    line: `${who(note.author)} mentioned @pi on ${merge ? `merge request !${iid}` : `#${iid}`} · ${watch.repo}/${merge ? "-/merge_requests" : "-/issues"}/${iid}`,
+                    body,
+                });
             }
         }
 
