@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 #
-# Pi Pocket with Python: the stock image (docker/Dockerfile) plus python3 and uv.
+# Pi Pocket with Python: the stock image (docker/Dockerfile) plus python3, uv, and
+# Obsidian with its CLI.
 #
 #   docker build -f docker/tools.dockerfile -t pi-pocket:tools .
 #
@@ -116,6 +117,7 @@ FROM app AS development
 
 ARG UV_VERSION=0.13.5
 ARG GLAB_VERSION=1.124.0
+ARG OBSIDIAN_VERSION=1.14.5
 
 USER root
 
@@ -142,12 +144,17 @@ RUN set -eux; \
 # `uv python install` cannot help, because UV_PYTHON_DOWNLOADS=0 is set for the
 # session: a managed download lives in the container's writable layer and is gone
 # on the next recreate.
+#
+# xvfb is for Obsidian below: the app is a window application, and the CLI talks to
+# it; without a display it cannot start. The image's chromium already brought the
+# other Electron libraries (GTK, NSS, GBM, ALSA).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
         python3 \
         python3-dev \
         python3-venv \
+        xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # The installer puts uv and uvx in /usr/local/bin and leaves nothing in ~/.bashrc,
@@ -174,5 +181,30 @@ RUN mkdir -p "${UV_TOOL_BIN_DIR}" && chmod 0777 "${UV_TOOL_BIN_DIR}"
 
 # /opt/uv-bin comes before the rest of the image's PATH, which is kept as it is.
 ENV PATH=/opt/uv-bin:${PATH}
+
+# Obsidian's CLI is only a client: each command goes over a Unix socket to a running
+# Obsidian app. The app is therefore installed too, and docker/obsidian (on PATH as
+# `obsidian`) starts the app under Xvfb when no instance answers. The app is a large
+# download (~130 MB, ~345 MB installed); it is in the tools image only.
+#
+# The amd64 build is the plain archive name; arm64 adds a suffix. The archive holds
+# one top-level folder, so --strip-components=1 puts the app in /opt/obsidian.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) obsidian_arch= ;; \
+        arm64) obsidian_arch=-arm64 ;; \
+        *) echo "Obsidian has no release for $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 3 -o /tmp/obsidian.tar.gz \
+        "https://github.com/obsidianmd/obsidian-releases/releases/download/v${OBSIDIAN_VERSION}/obsidian-${OBSIDIAN_VERSION}${obsidian_arch}.tar.gz"; \
+    mkdir -p /opt/obsidian; \
+    tar -xzf /tmp/obsidian.tar.gz -C /opt/obsidian --strip-components=1; \
+    rm -f /tmp/obsidian.tar.gz; \
+    test -x /opt/obsidian/obsidian; \
+    test -x /opt/obsidian/obsidian-cli
+
+COPY docker/obsidian /usr/local/bin/obsidian
+RUN chmod 0755 /usr/local/bin/obsidian
 
 WORKDIR /workspace
