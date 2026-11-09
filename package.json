@@ -30,6 +30,7 @@
         "src/",
         "web/",
         "types/",
+        "test/helpers.ts",
         "docs/",
         "contrib/",
         "AGENTS.md",

@@ -68,6 +68,16 @@ test("my_word_count counts the words", async () => {
 
 The test copies the module into a temporary data folder, turns it on as the owner, and starts a session. The scripted model calls the tool, and the test checks what the tool returned.
 
+In a repository of its own, install Pi Pocket as a development dependency, and import the helpers by name: the package ships `test/helpers.ts` for this. Name the commit that has the API your module needs, and write it in the README, so a test always runs against the version that the module states.
+
+```json
+"devDependencies": { "pi-pocket": "github:owner/pi-pocket#<commit>" }
+```
+
+```typescript
+import { cleanUp, openApp, say, scriptedModel } from "pi-pocket/test/helpers.ts";
+```
+
 Pi Pocket's own tests show more:
 
 - `test/docs-examples.test.ts` loads the examples of these docs as drop-ins, and uses them.
