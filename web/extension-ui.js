@@ -968,6 +968,102 @@ function pocketFor(record) {
             return stop;
         },
         /**
+         * Hear the answer that Pi writes now, in the session that the tab shows: `listener` gets
+         * `{ conversationId, part, text, done }` each time the text changes, and once more with `done: true`
+         * when that part ends. `text` is the answer so far, without its thinking and tool calls, and `part`
+         * counts the parts of one run. Returns how to stop; it stops with this version of the module too.
+         */
+        onAnswer(listener) {
+            tick(record);
+
+            if (typeof listener !== "function") {
+                throw new Error("pocket.onAnswer: give it a function");
+            }
+
+            if (!live()) {
+                return () => {};
+            }
+
+            /** The part that the listener has, and how many parts this run has had. */
+            let shown = null;
+            let part = 0;
+
+            const hear = (answer) => {
+                try {
+                    listener(answer);
+                } catch (error) {
+                    console.error(`${record.title}: an onAnswer listener failed`, error);
+                }
+            };
+
+            /** The part that showed is complete. `reset` starts the count again, at the end of a run. */
+            const finish = (reset) => {
+                if (shown !== null) {
+                    hear({ ...shown, done: true });
+                    shown = null;
+                }
+
+                if (reset) {
+                    part = 0;
+                }
+            };
+
+            const look = (state) => {
+                if (!liveRecord(record)) {
+                    return;
+                }
+
+                const conversationId = state.conversationId ?? null;
+                const live = state.view?.live;
+                const blocks = live?.generation?.message?.blocks ?? [];
+                const text = blocks
+                    .filter((block) => block.type === "text")
+                    .map((block) => block.text)
+                    .join("");
+
+                if (shown !== null && conversationId !== shown.conversationId) {
+                    finish(true);
+                }
+
+                // The run ended: the part that showed is complete.
+                if (!(live?.busy === true)) {
+                    finish(true);
+
+                    return;
+                }
+
+                // No text now, or less than before: this part is over, and the next one starts after a
+                // tool call, or after a retry that replaced the words.
+                if (shown !== null && (text === "" || text.length < shown.text.length)) {
+                    finish(false);
+                }
+
+                if (text === "") {
+                    return;
+                }
+
+                if (shown === null) {
+                    part += 1;
+                    shown = { conversationId, part, text };
+                    hear({ ...shown, done: false });
+
+                    return;
+                }
+
+                if (text !== shown.text) {
+                    shown = { ...shown, text };
+                    hear({ ...shown, done: false });
+                }
+            };
+
+            const stop = store.subscribe(look);
+
+            record.disposers.push(stop);
+            look(store.state);
+
+            return stop;
+        },
+        /**
          * A page of the people's messages in the session the tab shows, oldest first: the newest `limit` (50 by default,
          * up to 200), or those before the cursor `before` that a page gave. Its `before` is null at the start. Rejects
          * with `status` 409 when the cursor is stale (the context changed), and with an AbortError when `signal` aborts.

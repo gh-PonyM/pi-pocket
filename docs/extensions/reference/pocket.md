@@ -268,6 +268,29 @@ Since 0.20.0 · Experimental
 
 Calls `listener` with the id of the session the tab shows, or null, at once, and again each time it changes: another session opens, the person goes to the list, or they lose access to it. Returns how to stop. It also stops when this version of the module goes. A listener that throws is logged, and the others go on.
 
+### `onAnswer`
+
+```ts
+onAnswer(listener: (answer: AnswerText) => void): () => void;
+```
+
+Since 0.28.0 · Experimental
+
+Hears the answer that Pi writes now, in the session that the tab shows, while it grows. The listener gets an [`AnswerText`](#answertext): `{ conversationId, part, text, done }`.
+
+- `text` is the answer so far, without its thinking and its tool calls. A tab that reads it aloud can cut it into sentences as it comes.
+- `part` counts the parts of one run. A tool call ends a part, and the answer after that call is the next one.
+- `done` is true in one last call, when that part ends: the run ended, the text was replaced (a retry, or the next part), or another session opened.
+- A very long answer can stop short here, at about 8,000 characters. Read the finished answer ([`messages`](#messages), or the action under it) for every word.
+
+Pi Pocket calls the listener only when the text changes, so a long answer is a few calls a second, and it calls it once with the answer that the tab already has when the module sets it up. A listener that throws is logged, and the others go on. It returns how to stop, and it stops when this version of the module goes.
+
+```js
+const stop = pocket.onAnswer(({ text, done }) => {
+    status.update({ text: done ? "quiet" : `${text.length} characters` });
+});
+```
+
 ### `messages`
 
 ```ts
@@ -1051,6 +1074,26 @@ Since 0.20.0 · Experimental
 
 - `id`: the words' id in the module.
 - `words`: the words for a session, up to 32, each up to 100 characters. The search lowercases them. It is called as people search, so keep it fast, and do not call `pocket` in it. Give `update` a new function when the words change.
+
+### `AnswerText`
+
+```ts
+interface AnswerText {
+    readonly conversationId: number | null;
+    readonly part: number;
+    readonly text: string;
+    readonly done: boolean;
+}
+```
+
+Since 0.28.0 · Experimental
+
+One part of the answer that Pi writes now, as [`pocket.onAnswer`](#onanswer) gives it.
+
+- `conversationId`: the session that the tab shows. The id of the session when the listener was called.
+- `part`: 1 for the first part of a run, and more after each tool call. It starts again at 1 in the next run.
+- `text`: the words of this part so far, in Markdown, without thinking and without tool calls.
+- `done`: true when this part is complete, and there is no more text to come in it.
 
 ### `MessagesOptions`
 

@@ -78,6 +78,7 @@ const POCKET_MEMBERS: Record<keyof Pocket, true> = {
     sessionSearch: true,
     composerKey: true,
     onConversation: true,
+    onAnswer: true,
     messages: true,
     reveal: true,
     insertText: true,

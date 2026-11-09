@@ -91,6 +91,7 @@ export const PAGES = {
         "SessionActionSpec",
         "SessionFilterSpec",
         "SessionSearchSpec",
+        "AnswerText",
         "MessagesOptions",
         "MessagePage",
         "MessageInfo",

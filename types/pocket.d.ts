@@ -2099,6 +2099,22 @@ export interface SessionSearchSpec {
 }
 
 /**
+ * The answer that Pi writes now, as `pocket.onAnswer` gives it: one part at a time.
+ * @since 0.28.0
+ * @experimental
+ */
+export interface AnswerText {
+    /** The session that the tab shows. */
+    conversationId: number | null;
+    /** Counts the parts of one run: 1 for the first, more after a tool call. */
+    part: number;
+    /** The text of this part so far, without thinking or tool calls. */
+    text: string;
+    /** True when this part is complete: the run ended, or another session shows. */
+    done: boolean;
+}
+
+/**
  * What `pocket.messages` reads.
  * @since 0.20.0
  * @experimental
@@ -2586,6 +2602,14 @@ export interface Pocket {
      * @experimental
      */
     onConversation(listener: (conversationId: number | null) => void): () => void;
+    /**
+     * Hears the answer that Pi writes now, in the session that the tab shows: the listener gets
+     * `{ conversationId, part, text, done }` each time the text changes, and once more with `done: true`
+     * when that part ends. Returns how to stop.
+     * @since 0.28.0
+     * @experimental
+     */
+    onAnswer(listener: (answer: AnswerText) => void): () => void;
     /**
      * Reads a page of the people's messages in the session the tab shows, oldest first.
      * @since 0.20.0
